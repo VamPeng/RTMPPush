@@ -11,7 +11,10 @@
 using namespace std;
 
 template<typename T>
+
 class SafeQueue {
+    typedef void (*ReleaseCallback)(T &);
+
 public:
     SafeQueue() {
         pthread_mutex_init(&mutex, NULL);
@@ -23,12 +26,13 @@ public:
         pthread_mutex_destroy(&mutex);
     }
 
-    void put(T new_value) {
+    void push(T new_value) {
         pthread_mutex_lock(&mutex);
         if (work) {
             q.push(new_value);
             pthread_cond_signal(&cond);
         } else {
+            releaseCallback(new_value);
         }
         pthread_mutex_unlock(&mutex);
     }
@@ -58,9 +62,15 @@ public:
     void clear() {
         pthread_mutex_lock(&mutex);
         while (!q.empty()) {
+            T value = q.front();
+            releaseCallback(value);
             q.pop();
         }
         pthread_mutex_unlock(&mutex);
+    }
+
+    void setReleaseCallback(ReleaseCallback r){
+        releaseCallback = r;
     }
 
 private:
@@ -68,6 +78,7 @@ private:
     pthread_cond_t cond;
     int work = 0;
     queue<T> q;
+    ReleaseCallback releaseCallback;
 };
 
 

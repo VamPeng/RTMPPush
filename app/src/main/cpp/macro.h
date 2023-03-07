@@ -8,6 +8,7 @@
 #include "android/log.h"
 
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR,"VamPush",__VA_ARGS__)
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO,"VamPush",__VA_ARGS__)
 
 #define DELETE(obj) if(obj){delete obj; obj=0;}
 

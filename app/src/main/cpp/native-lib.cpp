@@ -10,6 +10,7 @@
 #include "macro.h"
 
 VideoChannel *videoChannel;
+AudioChannel *audioChannel;
 
 int isStart = 0;
 pthread_t pid;
@@ -22,14 +23,17 @@ SafeQueue<RTMPPacket *> packets;
 void callback(RTMPPacket *packet) {
     if (packet) {
         packet->m_nTimeStamp = RTMP_GetTime() - start_time;
-        packets.put(packet);
+        packets.push(packet);
     }
 }
 
 void releasePacket(RTMPPacket *&packet) {
-    RTMPPacket_Free(packet);
-    delete packet;
-    packet = 0;
+    if (packet) {
+
+        RTMPPacket_Free(packet);
+        delete packet;
+        packet = 0;
+    }
 }
 
 void *start(void *args) {
@@ -45,8 +49,8 @@ void *start(void *args) {
     if (!ret) {
         LOGE("设置url失败:%s", url);
         return NULL;
-    } else{
-        LOGE("设置url成功:%s",url);
+    } else {
+        LOGE("设置url成功:%s", url);
     }
     rtmp->Link.timeout = 5;
     RTMP_EnableWrite(rtmp);
@@ -56,7 +60,7 @@ void *start(void *args) {
     if (!ret) {
         LOGE("连接失败");
         return NULL;
-    } else{
+    } else {
         LOGE("连接成功");
     }
 
@@ -77,13 +81,16 @@ void *start(void *args) {
             continue;
         }
         packet->m_nInfoField2 = rtmp->m_stream_id;
-        LOGE("发送数据");
         ret = RTMP_SendPacket(rtmp, packet, 1);
-        LOGE("发送结果: %d",ret);
-        // 释放packet
         releasePacket(packet);
+        if (!ret) {
+            LOGE("发送数据失败");
+            break;
+        }
 
     }
+    // 释放packet
+    releasePacket(packet);
 
     isStart = 0;
     readyPushing = 0;
@@ -111,6 +118,9 @@ JNIEXPORT void JNICALL
 Java_com_vam_vpusher_LivePusher_native_1init(JNIEnv *env, jobject thiz) {
     videoChannel = new VideoChannel;
     videoChannel->setVideoCallback(callback);
+    audioChannel = new AudioChannel;
+    audioChannel->setAudioCallback(callback);
+    packets.setReleaseCallback(releasePacket);
 }
 
 extern "C"
@@ -154,3 +164,56 @@ Java_com_vam_vpusher_LivePusher_native_1pushVideo(JNIEnv *env, jobject thiz, jby
 
     env->ReleaseByteArrayElements(data_, data, 0);
 }
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_vam_vpusher_LivePusher_native_1pushAudio(JNIEnv *env, jobject thiz, jbyteArray data_) {
+    if (!audioChannel || !readyPushing) {
+        return;
+    }
+    jbyte *data = env->GetByteArrayElements(data_, NULL);
+    audioChannel->encodeData(data);
+    env->ReleaseByteArrayElements(data_, data, 0);
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_vam_vpusher_LivePusher_native_1setAudioEncInfo(JNIEnv *env, jobject thiz,
+                                                        jint sampleRate, jint channels) {
+    if (audioChannel) {
+        audioChannel->setAudioEncInfo(sampleRate, channels);
+    }
+}
+
+extern "C"
+JNIEXPORT jint JNICALL
+Java_com_vam_vpusher_LivePusher_getInputSamples(JNIEnv *env, jobject thiz) {
+    if (audioChannel) {
+        return audioChannel->getInputSamples();
+    }
+    return -1;
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_vam_vpusher_LivePusher_native_1stop(JNIEnv *env, jobject thiz) {
+    LOGI("enter stop");
+    readyPushing = 0;
+    //关闭队列工作
+    packets.setWork(0);
+    LOGI("enter stop 1");
+    pthread_join(pid, 0);
+    LOGI("leave stop");
+}
+
+extern "C"
+JNIEXPORT void JNICALL
+Java_com_vam_vpusher_LivePusher_native_1release(JNIEnv *env, jobject thiz) {
+    if (audioChannel) {
+        delete audioChannel;
+    }
+    if (videoChannel) {
+        delete videoChannel;
+    }
+}
+
+

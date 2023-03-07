@@ -93,6 +93,32 @@ public class CameraHelper implements SurfaceHolder.Callback, Camera.PreviewCallb
         }
     }
 
+    private void setPreviewSize(Camera.Parameters parameters) {
+        // 获取摄像头支持的宽、高
+        List<Camera.Size> supportedPreviewSizes = parameters.getSupportedPreviewSizes();
+        Camera.Size size = supportedPreviewSizes.get(0);
+        tag("支持 " + size.width + "x" + size.height);
+        // 选择一个与设置的差距最小的支持分辨率
+        // 10x10 20x20 30x30
+        int m = Math.abs(size.height * size.width - width * height);
+        supportedPreviewSizes.remove(0);
+        Iterator<Camera.Size> iterator = supportedPreviewSizes.iterator();
+        while (iterator.hasNext()) {
+            Camera.Size next = iterator.next();
+            tag("支持 " + size.width + "x" + next.height);
+            int n = Math.abs(next.height * next.width - width * height);
+            if (n < m) {
+                m = n;
+                size = next;
+            }
+        }
+        width = size.width;
+        height = size.height;
+        parameters.setPreviewSize(width, height);
+        tag("设置分辨率: " + size.width + "-" + size.height);
+
+    }
+
     private void setPreviewOrientation(Camera.Parameters parameters) {
         Camera.CameraInfo info = new Camera.CameraInfo();
         Camera.getCameraInfo(cameraId, info);
@@ -137,32 +163,6 @@ public class CameraHelper implements SurfaceHolder.Callback, Camera.PreviewCallb
 
     }
 
-    private void setPreviewSize(Camera.Parameters parameters) {
-        // 获取摄像头支持的宽、高
-        List<Camera.Size> supportedPreviewSizes = parameters.getSupportedPreviewSizes();
-        Camera.Size size = supportedPreviewSizes.get(0);
-        tag("支持 " + size.width + "x" + size.height);
-        // 选择一个与设置的差距最小的支持分辨率
-        // 10x10 20x20 30x30
-        int m = Math.abs(size.height * size.width - width * height);
-        supportedPreviewSizes.remove(0);
-        Iterator<Camera.Size> iterator = supportedPreviewSizes.iterator();
-        while (iterator.hasNext()) {
-            Camera.Size next = iterator.next();
-            tag("支持 " + size.width + "x" + next.height);
-            int n = Math.abs(next.height * next.width - width * height);
-            if (n < m) {
-                m = n;
-                size = next;
-            }
-        }
-        width = size.width;
-        height = size.height;
-        parameters.setPreviewSize(width, height);
-        tag("设置分辨率: " + size.width + "-" + size.height);
-
-    }
-
     @Override
     public void onPreviewFrame(byte[] data, Camera camera) {
         switch (rotation) {
@@ -170,25 +170,61 @@ public class CameraHelper implements SurfaceHolder.Callback, Camera.PreviewCallb
                 rotation90(data);
                 break;
             case Surface.ROTATION_90:
-                rotation90(data);
                 break;
             case Surface.ROTATION_270:
-                rotation90(data);
                 break;
         }
-        previewCallback.onPreviewFrame(bytes,camera);
+        previewCallback.onPreviewFrame(bytes, camera);
         camera.addCallbackBuffer(buffer);
     }
 
     private void rotation90(byte[] data) {
+        int index = 0;
+        int ySize = width * height;
 
+
+        int uvHeight = height / 2;
+        if (cameraId == Camera.CameraInfo.CAMERA_FACING_BACK) {
+
+            //将y的数据旋转之后 放入新的byte数组
+            for (int i = 0; i < width; i++) {
+                for (int j = height - 1; j >= 0; j--) {
+                    bytes[index++] = data[width * j + i];
+                }
+            }
+
+            for (int i = 0; i < width; i += 2) {
+                for (int j = uvHeight - 1; j >= 0; j--) {
+                    //u
+                    bytes[index++] = data[ySize + width * j + i];
+
+                    //v
+                    bytes[index++] = data[ySize + width * j + i + 1];
+                }
+            }
+        } else {
+            for (int i = 0; i < width; i++) {
+                int nPos = width - 1;
+                for (int j = 0; j < height; j++) {
+                    bytes[index++] = data[nPos - i];
+                    nPos += width;
+                }
+            }
+
+            for (int i = 0; i < width; i += 2) {
+                int nPos = ySize + width - 1;
+                for (int j = 0; j < uvHeight; j++) {
+                    bytes[index++] = data[nPos - i - 1];
+                    bytes[index++] = data[nPos - i];
+                    nPos += width;
+                }
+            }
+        }
     }
 
 
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
-        stopPreview();
-        startPreview();
     }
 
     @Override
@@ -199,7 +235,12 @@ public class CameraHelper implements SurfaceHolder.Callback, Camera.PreviewCallb
 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
+        stopPreview();
+    }
 
+    public void release() {
+        surfaceHolder.removeCallback(this);
+        stopPreview();
     }
 
     interface OnChangedSizeListener {

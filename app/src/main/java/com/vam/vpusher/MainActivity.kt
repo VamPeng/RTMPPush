@@ -64,13 +64,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startLive() {
-        val url = "rtmp://192.168.2.101:1935/myapp"
+        val url = "rtmp://192.168.2.101/myapp"
 //        val url = "rtmp://127.0.0.1:1935/myapp";
         livePusher.startLive(url)
     }
 
     private fun stopLive() {
-
+        livePusher.stopLive();
     }
 
 
